@@ -181,15 +181,15 @@ def prepareNetwork(gpu,image_batch,itera):
 			if itera ==0:
 				layer = ResNet31(image_batch, phase='train',trainable=True)
 				score = Add_ResNet(layer, phase='train',trainable=True)
-				scores.append(score)
+				scores[0].append(score)
 			elif itera >0:
 				layer = ResNet31(image_batch, phase='train', trainable=False)
 				for xu in range(itera+1):
 					if xu == itera:
-						score = Add_ResNet(layer, phase='train',trainable=True)
+						score = Add_ResNet(layer, xu=xu,phase='train',trainable=True)
 						scores[xu].append(score)
 					else:
-						score = Add_ResNet(layer, phase='train',trainable=False)
+						score = Add_ResNet(layer, xu=xu,phase='train',trainable=False)
 						scores[xu].append(score)
 		scope = tf.get_variable_scope()
 		scope.reuse_variables()

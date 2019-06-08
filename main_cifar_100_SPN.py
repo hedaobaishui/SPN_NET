@@ -80,7 +80,7 @@ for step_classes in [2]:#,5,10,20,50]:
             #不需要蒸馏
             variables_graph, variables_graph2, scores, scores_stored = utils_cifar.prepareNetwork(gpu,image_batch,itera)
             with tf.device('/gpu:0'):
-                scores        = tf.concat(scores,0)
+                scores        = tf.concat(scores[0],0)
                 l2_reg        = wght_decay * tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope='ResNet34'))
                 loss_class    = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=label_batch, logits=scores))
                 loss          = loss_class + l2_reg
@@ -93,6 +93,7 @@ for step_classes in [2]:#,5,10,20,50]:
             #将上一次网络的输出作为软标签
             op_assign = [(variables_graph2[i]).assign(variables_graph[i]) for i in range(len(variables_graph))]
             with tf.device('/gpu:0'):
+                #重置loss
                 scores = tf.concat(scores, 0) # 连接
                 scores_stored = tf.concat(scores_stored, 0)
                 old_cl = (order[range(itera * nb_cl)]).astype(np.int32)

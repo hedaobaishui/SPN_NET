@@ -26,10 +26,11 @@ nb_groups  = int(100/nb_cl)
 nb_protos  = 20             # Number of prototypes per class at the end: total protoset memory/ total number of classes
 epochs     = 70             # Total number of epochs
 lr_old     = 2.             # Initial learning rate
-lr_strat   = [2, 3]       # Epochs where learning rate gets decreased
+lr_strat   = [2, 3]         # Epochs where learning rate gets decreased
 lr_factor  = 5.             # Learning rate decrease factor
 wght_decay = 0.00001        # Weight Decay
 nb_runs    = 1              # 总的执行次数 Number of runs (random ordering of classes at each run)10*10=100类
+T          = 2              # 温度系数
 np.random.seed(1993)        # Fix the random seed
 
 Cifar_train_file, Cifar_test_file, save_path = set_data_path.get_data_path()
@@ -89,6 +90,7 @@ for step_classes in [2]:#,5,10,20,50]:
                 train_step    = opt.minimize(loss,var_list=variables_graph)
         elif itera >0:
             #知识蒸馏
+            # variables_graph2 比 variables_graph2 多一个分支
             variables_graph, variables_graph2, scores, scores_stored = utils_cifar.prepareNetwork(gpu, image_batch,itera)
             #将上一次网络的输出作为软标签
             op_assign = [(variables_graph2[i]).assign(variables_graph[i]) for i in range(len(variables_graph))]
@@ -103,8 +105,8 @@ for step_classes in [2]:#,5,10,20,50]:
                 # label_old_classes 和 pred_old_classes 维度不一样前者itera块值 后者itera+1块值
 
                 # 旧网络的预测值作为软标签
-                # 处理label_old_classes
-                label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i] for i in old_cl) for j in range(itera)], axis=1))
+                # 处理label_old_classes                                    第i个位置上的logits值
+                label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i] for i in old_cl) for j in range(itera)], axis=1))/T
                 label_new_classes = tf.stack([label_batch[:, i] for i in new_cl], axis=1)
 
                 # 新网络的对旧类别的预测值

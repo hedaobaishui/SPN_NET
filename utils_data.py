@@ -200,16 +200,22 @@ def reading_data_and_preparing_network(option,train_data,train_data_label,xu_pro
 	### Network and loss function
 	with tf.variable_scope('ResNet34'):
 		with tf.device('/gpu:0'):
-			scores = utils_cifar.ResNet34(image_batch, phase='test')
-			graph = tf.get_default_graph()
-			op_feature_map = graph.get_operation_by_name('ResNet34/pool_last/avg').outputs[0]
+			layer  = utils_cifar.ResNet31(image_batch, phase='test',trainable=False)
+			for xu in range(itera+1):
+				score = utils_cifar.Add_ResNet(layer, phase='test',xu=xu,trainable=False)
+				if xu == itera:#最后一个分支的输出
+					scores = utils_cifar.Add_ResNet(layer, phase='test', xu=xu,trainable=False)
+			graph  = tf.get_default_graph()
+			op_feature_map_name = 'ResNet34/'+'pool_last_'+str(itera)+'/avg'
+			op_feature_map = graph.get_operation_by_name(op_feature_map_name).outputs[0]
+			# op_feature_map = graph.get_operation_by_name('ResNet34/pool_last/avg').outputs[0]
 
 	loss_class = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=label_batch_one_hot, logits=scores))
 
 	### Initilization
 	#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>注意模型保存路径<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	params = dict(cPickle.load(open(save_path + 'model-iteration' + str(nb_cl) + '-%i.pickle' % itera,'rb')))
-	inits = utils_cifar.get_weight_initializer(params)
+	inits = utils_cifar.get_weight_initializer(params) # 完成网络权重的初始化工作
 
 	return inits, scores, label_batch, loss_class, file_xu_batch,op_feature_map
 

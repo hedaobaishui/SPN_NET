@@ -135,7 +135,7 @@ def residual_block(inp,phase,alpha=0.0,nom='a',increase_dim=False,last=False,tra
 #先准备一个共享网络块
 #34层的残差网络15个BLOCK
 #共享3个block
-def ResNet31(inp, phase, num_outputs=100,itera=0,alpha=0.0,trainable=True):#phase test or train
+def ResNet31(inp, phase,alpha=0.0,trainable=True):#phase test or train
     # First conv
     # first layer, output is 16 x 32 x 32
 	layer = conv(inp,"conv1",size=3,strides=[1, 1, 1, 1], out_channels=16, alpha=alpha, padding='SAME',trainable=trainable)
@@ -202,12 +202,12 @@ def prepareNetwork(gpu,image_batch,itera):
 		with tf.device('/gpu:' + gpu):
 			if itera ==0:
 				layer = ResNet31(image_batch, phase='test',trainable=True)
-				score = Add_ResNet(layer, phase='test',trainable=True)
+				score = Add_ResNet(layer, phase='test',xu=0, trainable=True)
 				scores_stored.append(score)
 			elif itera >0:
 				layer = ResNet31(image_batch, phase='test', trainable=False)
 				for xu in range(itera):
-					score = Add_ResNet(layer, phase='test',trainable=False)
+					score = Add_ResNet(layer, phase='test',xu=xu, trainable=False)
 					scores_stored[xu].append(score)
 		scope = tf.get_variable_scope()
 		scope.reuse_variables()

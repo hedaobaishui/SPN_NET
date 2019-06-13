@@ -160,7 +160,7 @@ def ResNet31(inp, phase,alpha=0.0,trainable=True):#phase test or train
 	layer = residual_block(layer, phase, alpha=0.0, nom='o', increase_dim=True,trainable=trainable)
 	return layer
 def Add_ResNet(inp, phase, num_outputs=100,xu=0,alpha=0.0,trainable =True):
-	name = '_branch'+str(xu)
+	name = '_branch_'+str(xu)
 	layer = residual_block(inp, phase, alpha=0.0, nom=name , last=True,trainable=trainable)
 	# 后面添加全连接层
 	name_pool = 'pool_last_'+str(xu)
@@ -180,7 +180,7 @@ def prepareNetwork(gpu,image_batch,itera):
 		with tf.device('/gpu:' + gpu):
 			if itera ==0:
 				layer = ResNet31(image_batch, phase='train',trainable=True)
-				score = Add_ResNet(layer, phase='train',trainable=True)
+				score = Add_ResNet(layer, xu= itera,phase='train',trainable=True)
 				scores[0].append(score)
 			elif itera >0:
 				layer = ResNet31(image_batch, phase='train', trainable=False)
@@ -200,15 +200,10 @@ def prepareNetwork(gpu,image_batch,itera):
 	#scores_stored 比scores 少一个分支 对旧样本做出预测
 	with tf.variable_scope('store_ResNet34'):
 		with tf.device('/gpu:' + gpu):
-			if itera ==0:
-				layer = ResNet31(image_batch, phase='test',trainable=True)
-				score = Add_ResNet(layer, phase='test',xu=0, trainable=True)
-				scores_stored.append(score)
-			elif itera >0:
-				layer = ResNet31(image_batch, phase='test', trainable=False)
-				for xu in range(itera):
-					score = Add_ResNet(layer, phase='test',xu=xu, trainable=False)
-					scores_stored[xu].append(score)
+			layer = ResNet31(image_batch, phase='test',trainable=True)
+			for xu in range(itera):
+				score = Add_ResNet(layer, phase='test',xu=xu, trainable=False)
+				scores_stored[xu].append(score)
 		scope = tf.get_variable_scope()
 		scope.reuse_variables()
 

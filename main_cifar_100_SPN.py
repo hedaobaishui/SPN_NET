@@ -23,7 +23,7 @@ n          = 5              # Set the depth of the architecture: n = 5 -> 32 lay
 nb_val     = 0              # Validation samples per class
 nb_cl      = 10             # Classes per group
 nb_groups  = int(100/nb_cl)
-nb_protos  = 20             # Number of prototypes per class at the end: total protoset memory/ total number of classes
+nb_protos  = 10             # Number of prototypes per class at the end: total protoset memory/ total number of classes
 epochs     = 70             # Total number of epochs
 lr_old     = 2.             # Initial learning rate
 lr_strat   = [2, 3]         # Epochs where learning rate gets decreased
@@ -52,14 +52,15 @@ for i in range(100):
 #top1_acc_list_ori   = np.zeros((100/nb_cl,3,nb_runs))
 
 #执行多次.................................
-for step_classes in [2]:#,5,10,20,50]:
+for step_classes in [2,5,10,20,50]:
+    save_model_path = save_path + 'step_' + str(step_classes) + '_classes/'
     nb_cl = step_classes  # Classes per group
     nb_groups = int(100 / nb_cl)
-    for itera in range(2):#100/nb_cl
+    for itera in range(nb_groups):#100/nb_cl
         if itera == 0:#第一次迭代增加批次 后面网络被初始化 效率提高
-            epochs = 4
+            epochs = 80
         else:
-            epochs = 4
+            epochs = 50
         """
         1、先构建网络，定义一些变量
         2、构建损失函数
@@ -93,11 +94,12 @@ for step_classes in [2]:#,5,10,20,50]:
             # variables_graph2 比 variables_graph2 多一个分支
             variables_graph, variables_graph2, scores, scores_stored = utils_cifar.prepareNetwork(gpu, image_batch,itera)
             #将上一次网络的输出作为软标签
-            op_assign = [(variables_graph2[i]).assign(variables_graph[i]) for i in range(len(variables_graph))]
+            op_assign = [(variables_graph[i]).assign(variables_graph2[i]) for i in range(len(variables_graph2))]
             with tf.device('/gpu:0'):
                 #重置loss
+                scores = scores[0] #仅仅使用最后一个分支的输出
                 scores = tf.concat(scores, 0) # 连接
-                scores_stored = tf.concat(scores_stored, 0)
+                scores_stored = [tf.concat(scores_stored[i], 0) for i in range(itera)]
                 old_cl = (order[range(itera * nb_cl)]).astype(np.int32)
                 new_cl = (order[range(itera * nb_cl, nb_groups * nb_cl)]).astype(np.int32) # ？￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥
 
@@ -106,18 +108,25 @@ for step_classes in [2]:#,5,10,20,50]:
 
                 # 旧网络的预测值作为软标签
                 # 处理label_old_classes                                    第i个位置上的logits值
-                label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i] for i in old_cl) for j in range(itera)], axis=1))/T
+                # 获得软标签
+                soft_label_old_classes = None
+                for j in range(itera):
+                    score_ = tf.stack([scores_stored[j][:,i] for i in old_cl],axis=1)
+                    soft_label_old_classes = tf.sigmoid(score_)/tf.cast(T,tf.float32)
+                # label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i]/T for i in old_cl) for j in range(itera)], axis=1))
                 label_new_classes = tf.stack([label_batch[:, i] for i in new_cl], axis=1)
 
                 # 新网络的对旧类别的预测值
                 # 训练最后一个分支。使用该分支的预测值
-                pred_old_classes = tf.stack([scores[itera][:, i] for i in old_cl], axis=1)
-                pred_new_classes = tf.stack([scores[itera][:, i] for i in new_cl], axis=1)
+                # pred_old_classes = tf.stack([scores[itera][:, i] for i in old_cl], axis=1)
+                # pred_new_classes = tf.stack([scores[itera][:, i] for i in new_cl], axis=1)
+                pred_old_classes = tf.stack([scores[:, i] for i in old_cl], axis=1)
+                pred_new_classes = tf.stack([scores[:, i] for i in new_cl], axis=1)
 
                 l2_reg = wght_decay * tf.reduce_sum(
                     tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope='ResNet34'))
                 loss_class = tf.reduce_mean(tf.concat(
-                    [tf.nn.sigmoid_cross_entropy_with_logits(labels=label_old_classes, logits=pred_old_classes),
+                    [tf.nn.sigmoid_cross_entropy_with_logits(labels=soft_label_old_classes, logits=pred_old_classes),
                      tf.nn.sigmoid_cross_entropy_with_logits(labels=label_new_classes, logits=pred_new_classes)], 1))
                 loss = loss_class + l2_reg
                 learning_rate = tf.placeholder(tf.float32, shape=[])
@@ -133,7 +142,7 @@ for step_classes in [2]:#,5,10,20,50]:
 
             # Run the loading of the weights for the learning network and the copy network
             if itera > 0:
-                void0 = sess.run([(variables_graph[i]).assign(save_weights[i]) for i in range(len(variables_graph))])
+                void0 = sess.run([(variables_graph2[i]).assign(save_weights[i]) for i in range(len(variables_graph2))])
                 void1 = sess.run(op_assign)
 
             print('training*****************************************************')
@@ -170,8 +179,7 @@ for step_classes in [2]:#,5,10,20,50]:
             # copy weights to store network
             print('saving model')
             save_weights = sess.run([variables_graph[i] for i in range(len(variables_graph))])
-            save_model_path = save_path + 'step_'+str(step_classes)+'_classes'+'/NCM/'
-            utils_cifar.save_model('' + 'model-iteration' + str(nb_cl) + '-%i.pickle' % itera, scope='ResNet34',
+            utils_cifar.save_model(save_model_path + 'model-iteration' + str(nb_cl) + '-%i.pickle' % itera, scope='ResNet34',
                                     sess=sess)
 
         # Reset the graph
@@ -187,16 +195,17 @@ for step_classes in [2]:#,5,10,20,50]:
         3.使用数据特征作为依据 进行样本选择
         4.
             '''
-        inits, scores, label_batch, loss_class, file_string_batch, op_feature_map = utils_data.reading_data_and_preparing_network('train',image_train,label_train, files_protoset,itera, batch_size, order,nb_cl, save_path)
+        inits, scores, label_batch, loss_class, file_string_batch, op_feature_map = utils_data.reading_data_and_preparing_network('train',image_train,label_train, files_protoset,itera, batch_size, order,nb_cl, save_model_path)
         with tf.Session(config=config) as sess:
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord)
             void3 = sess.run(inits)
 
             # Load the training samples of the current batch of classes in the feature space to apply the herding algorithm
+            file_num = nb_cl*500+nb_protos*100#每个类别500个样本 +保留集数量
             Dtot, label_dico,file_process = utils_data.load_class_in_feature_space(nb_cl, batch_size,scores, label_batch, loss_class,
-                                                                      file_string_batch,op_feature_map, sess)
-            file_process = np.array([x.decode() for x in file_process])
+                                                                      file_string_batch,op_feature_map, sess,file_num)
+            # file_process = np.array([x.decode() for x in file_process])
             # Herding procedure : ranking of the potential exemplars
             print('Exemplars selection starting ...')
             for iter_dico in range(nb_cl):
@@ -226,17 +235,17 @@ for step_classes in [2]:#,5,10,20,50]:
         print('Computing theoretical class means for NCM and mean-of-exemplars for iCaRL ...')
         for iteration2 in range(itera + 1):
             inits, scores, label_batch, loss_class, file_string_batch, op_feature_map = utils_data.reading_data_and_preparing_network(
-                'train',image_train, label_train, files_protoset, itera, batch_size, order, nb_cl, save_path)
+                'train',image_train, label_train, files_protoset, itera, batch_size, order, nb_cl, save_model_path)
 
             with tf.Session(config=config) as sess:
                 coord = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(coord=coord)
                 void2 = sess.run(inits)
-
+                file_num = nb_cl * 500 + nb_protos * 100  # 每个类别500个样本 +保留集数量
                 Dtot, label_dico, file_process = utils_data.load_class_in_feature_space(nb_cl, batch_size, scores, label_batch,
                                                                           loss_class,
-                                                                          file_string_batch,op_feature_map, sess)
-                file_process = np.array([x.decode() for x in file_process])
+                                                                          file_string_batch,op_feature_map, sess,file_num)
+                # file_process = np.array([x.decode() for x in file_process])
                 for iter_dico in range(nb_cl):
                     ind_cl = np.where(label_dico == order[iter_dico + iteration2 * nb_cl])[0]
                     D = Dtot[:, ind_cl]
@@ -269,7 +278,7 @@ for step_classes in [2]:#,5,10,20,50]:
 
         # Pickle class means and protoset
         # 每个增量阶段的class_means 不相同
-        with open(str(nb_cl) + 'class_means'+str(itera)+'.pickle', 'wb') as fp:
+        with open(save_model_path+str(nb_cl) + 'class_means'+str(itera)+'.pickle', 'wb') as fp:
             cPickle.dump(class_means, fp)
-        with open(str(nb_cl) + 'files_protoset.pickle', 'wb') as fp:
+        with open(save_model_path+str(nb_cl) + 'files_protoset.pickle', 'wb') as fp:
             cPickle.dump(files_protoset, fp)

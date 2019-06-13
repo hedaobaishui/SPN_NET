@@ -202,9 +202,12 @@ def reading_data_and_preparing_network(option,train_data,train_data_label,xu_pro
 		with tf.device('/gpu:0'):
 			layer  = utils_cifar.ResNet31(image_batch, phase='test',trainable=False)
 			for xu in range(itera+1):
-				score = utils_cifar.Add_ResNet(layer, phase='test',xu=xu,trainable=False)
-				if xu == itera:#最后一个分支的输出
+				if itera ==0:
 					scores = utils_cifar.Add_ResNet(layer, phase='test', xu=xu,trainable=False)
+				else:
+					scores = utils_cifar.Add_ResNet(layer, phase='test', xu=xu, trainable=False)
+					# if xu == itera:  # 最后一个分支的输出
+					# 	scores = utils_cifar.Add_ResNet(layer, phase='test', xu=xu, trainable=False)
 			graph  = tf.get_default_graph()
 			op_feature_map_name = 'ResNet34/'+'pool_last_'+str(itera)+'/avg'
 			op_feature_map = graph.get_operation_by_name(op_feature_map_name).outputs[0]

@@ -132,7 +132,7 @@ for step_classes in [2,5,10,20,50]:
                 # 根据label_batch 中的label 确定样本
                 soft_label_old_classes = []
                 pred_old_classes = []
-                xu_cl = tf.where(label_batch == 1)# 获取 [索引 类别] 128*100
+                xu_cl = tf.where(label_batch == 1)# 获取 [索引 类别] 128*2
                 # xu_old_cl = xu_cl[np.where(xu_cl[:,1] in order[0:itera*nb_cl])]
                 for j in range(itera):#不同的分支包含的类别是不同的。也就是每个分支对不同类别的可信度是不同的
                     #scores_stored 维度： itera*batch_size*100
@@ -141,10 +141,12 @@ for step_classes in [2,5,10,20,50]:
                     branch_cl = order[0:(j+1)*nb_cl]
                     xu_cl_old = []
                     for cl in range(nb_cl):
-                        xu_cl_old.append(xu_cl[np.where(xu_cl[:,1] == branch_cl[cl])])#当前分支类别包含的样本的序号
+                        #某一类别在 xu_cl 中的索引
+                        xu_cl_old_=tf.where(tf.equal(xu_cl[:, 1], branch_cl[cl]))
+                        xu_cl_old.append(tf.gather(xu_cl,xu_cl_old_))#当前分支类别包含的batch中样本的序号
                         if len(xu_cl_old)>0:#当前batch 有旧样本
-                            old_label_branch = tf.gather(scores_stored[j],xu_cl_old[:,0])#获取当前branch的输出scores
-                            old_scores_branch = tf.gather(scores,xu_cl_old[:,0])#获取当前样本的输出预测输出值
+                            old_label_branch = tf.gather(scores_stored[j],xu_cl_old)#获取当前branch的输出scores
+                            old_scores_branch = tf.gather(scores,xu_cl_old)#获取当前样本的输出预测输出值
                             soft_label_old_classes.append(tf.nn.softmax(old_label_branch)/tf.cast(T,tf.float32))
                             pred_old_classes.append(tf.nn.softmax(old_scores_branch)/tf.cast(T,tf.float32))
                 soft_label_old_classes = tf.stack(soft_label_old_classes,axis=1)
@@ -190,6 +192,10 @@ for step_classes in [2,5,10,20,50]:
                 print('Epoch %i' % epoch)
                 # print(len(files_from_cl))
                 for i in range(int(np.ceil(500*nb_cl/ batch_size))):  # 5000/128
+
+
+
+
                     loss_class_val, _, sc, lab = sess.run([loss_class, train_step, scores, label_batch_0],
                                                           feed_dict={learning_rate: lr})
                     loss_batch.append(loss_class_val)

@@ -53,14 +53,17 @@ for i in range(100):
 
 #执行多次.................................
 for step_classes in [2,5,10,20,50]:
+    files_protoset = []
+    for i in range(100):
+        files_protoset.append([])
     save_model_path = save_path + 'step_' + str(step_classes) + '_classes/'
     nb_cl = step_classes  # Classes per group
     nb_groups = int(100 / nb_cl)
     for itera in range(nb_groups):#100/nb_cl
         if itera == 0:#第一次迭代增加批次 后面网络被初始化 效率提高
-            epochs = 80
+            epochs = 1
         else:
-            epochs = 50
+            epochs = 1
         """
         1、先构建网络，定义一些变量
         2、构建损失函数
@@ -100,34 +103,74 @@ for step_classes in [2,5,10,20,50]:
                 scores = scores[0] #仅仅使用最后一个分支的输出
                 scores = tf.concat(scores, 0) # 连接
                 scores_stored = [tf.concat(scores_stored[i], 0) for i in range(itera)]
-                old_cl = (order[range(itera * nb_cl)]).astype(np.int32)
-                new_cl = (order[range(itera * nb_cl, nb_groups * nb_cl)]).astype(np.int32) # ？￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥
+                # old_cl = (order[range(itera * nb_cl)]).astype(np.int32)
+                # new_cl = (order[range(itera * nb_cl, nb_groups * nb_cl)]).astype(np.int32) # ？￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥
+                #
+                # #处理score 和 scores_stored 两个值维度不一样
+                # # label_old_classes 和 pred_old_classes 维度不一样前者itera块值 后者itera+1块值
+                #
+                # # 旧网络的预测值作为软标签
+                # # 处理label_old_classes                                    第i个位置上的logits值
+                # # 获得软标签
+                # soft_label_old_classes = None
+                # for j in range(itera):#是否仅仅选择包含的类别的score 分支0[]
+                #     # 仅仅选取当前分支包含的旧样本类别
+                #     old_cl_branch_j = old_cl[range(j*nb_cl,(j+1)*nb_cl)]
+                #     score_ = tf.stack([scores_stored[j][:,i] for i in old_cl_branch_j],axis=1)
+                #     # 修改得分函数为softmax
+                #     soft_label_old_classes = tf.nn.softmax(score_)/tf.cast(T,tf.float32)
+                # # label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i]/T for i in old_cl) for j in range(itera)], axis=1))
+                # label_new_classes = tf.stack([label_batch[:, i] for i in new_cl], axis=1)
+                #
+                # # 新网络的对旧类别的预测值
+                # # 训练最后一个分支。使用该分支的预测值
+                # # pred_old_classes = tf.stack([scores[itera][:, i] for i in old_cl], axis=1)
+                # # pred_new_classes = tf.stack([scores[itera][:, i] for i in new_cl], axis=1)
+                # # 修改交叉损失函数为 softmax_cross  原来为 sigmoid_cross
+                # pred_old_classes = tf.nn.softmax(tf.stack([scores[:, i] for i in old_cl], axis=1))/tf.cast(T,tf.float32)# 是否需要 经过softmax
+                # pred_new_classes = tf.nn.softmax(tf.stack([scores[:, i] for i in new_cl], axis=1))
+                # 根据label_batch 中的label 确定样本
+                soft_label_old_classes = []
+                pred_old_classes = []
+                for j in range(itera):#不同的分支包含的类别是不同的。也就是每个分支对不同类别的可信度是不同的
+                    #scores_stored 维度： itera*batch_size*100
+                    #scores        维度： itera*batch_size*100  仅仅最后一个分支有用
+                    #label_batch   维度： batch_size *100
+                    branch_cl = order[0:(j+1)*nb_cl]
+                    xu_old_cl=[] #当前分支处理的样本的序号
+                    for i in range(label_batch.shape[0].value):
+                        for j in branch_cl:
+                            if label_batch[i,j] == 1 :   #....
+                                xu_old_cl.extend(i)
+                    xu_old_cl = np.array(xu_old_cl)
+                    if len(xu_old_cl)>0:#当前batch 有旧样本
+                        soft_label_old_classes.append(tf.nn.softmax(scores_stored[j][xu_old_cl]) /tf.cast(T,tf.float32))
+                        pred_old_classes.append(tf.nn.softmax(scores[itera][xu_old_cl])/tf.cast(T,tf.float32))
 
-                #处理score 和 scores_stored 两个值维度不一样
-                # label_old_classes 和 pred_old_classes 维度不一样前者itera块值 后者itera+1块值
-
-                # 旧网络的预测值作为软标签
-                # 处理label_old_classes                                    第i个位置上的logits值
-                # 获得软标签
-                soft_label_old_classes = None
-                for j in range(itera):
-                    score_ = tf.stack([scores_stored[j][:,i] for i in old_cl],axis=1)
-                    soft_label_old_classes = tf.sigmoid(score_)/tf.cast(T,tf.float32)
-                # label_old_classes = tf.sigmoid(tf.stack([(scores_stored[j][:, i]/T for i in old_cl) for j in range(itera)], axis=1))
-                label_new_classes = tf.stack([label_batch[:, i] for i in new_cl], axis=1)
-
-                # 新网络的对旧类别的预测值
-                # 训练最后一个分支。使用该分支的预测值
-                # pred_old_classes = tf.stack([scores[itera][:, i] for i in old_cl], axis=1)
-                # pred_new_classes = tf.stack([scores[itera][:, i] for i in new_cl], axis=1)
-                pred_old_classes = tf.stack([scores[:, i] for i in old_cl], axis=1)
-                pred_new_classes = tf.stack([scores[:, i] for i in new_cl], axis=1)
+                new_class = order[itera*nb_cl:(itera+1)*nb_cl]
+                xu_new_cl =[]
+                for i in range(label_batch.shape[0].value):
+                    for j in new_class:
+                        if label_batch[i, j] >0:  # ....
+                            xu_new_cl.extend(i)
+                xu_new_cl = tf.cast(xu_new_cl,tf.int32)
+                label_new_classes = tf.stack(label_batch[xu_new_cl],axis=1)
+                pred_new_classes = tf.stack(tf.nn.softmax(scores[itera][xu_new_cl]),axis=1)
+                '''
+                那戴斯噶
+                '''
+                soft_label_old_classes = tf.stack(soft_label_old_classes,axis=1)
+                pred_old_classes = tf.stack(pred_old_classes,axis=1)
 
                 l2_reg = wght_decay * tf.reduce_sum(
                     tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope='ResNet34'))
-                loss_class = tf.reduce_mean(tf.concat(
-                    [tf.nn.sigmoid_cross_entropy_with_logits(labels=soft_label_old_classes, logits=pred_old_classes),
-                     tf.nn.sigmoid_cross_entropy_with_logits(labels=label_new_classes, logits=pred_new_classes)], 1))
+                if pred_old_classes.shape[0].value>0:
+                    loss_class = tf.reduce_mean(tf.concat(
+                        [tf.nn.softmax_cross_entropy_with_logits_v2(labels=soft_label_old_classes, logits=pred_old_classes),
+                         tf.nn.softmax_cross_entropy_with_logits_v2(labels=label_new_classes, logits=pred_new_classes)], 1))
+                else:
+                    loss_class = tf.reduce_mean(tf.concat(
+                         tf.nn.softmax_cross_entropy_with_logits_v2(labels=label_new_classes, logits=pred_new_classes), 1))
                 loss = loss_class + l2_reg
                 learning_rate = tf.placeholder(tf.float32, shape=[])
                 opt = tf.train.MomentumOptimizer(learning_rate, 0.9)

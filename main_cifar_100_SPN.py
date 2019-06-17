@@ -100,7 +100,7 @@ for step_classes in [2,5,10,20,50]:
             op_assign = [(variables_graph[i]).assign(variables_graph2[i]) for i in range(len(variables_graph2))]
             with tf.device('/gpu:0'):
                 #重置loss
-                scores = scores[0] #仅仅使用最后一个分支的输出
+                scores = scores[itera] #仅仅使用最后一个分支的输出
                 scores = tf.concat(scores, 0) # 连接
                 scores_stored = [tf.concat(scores_stored[i], 0) for i in range(itera)]
                 # old_cl = (order[range(itera * nb_cl)]).astype(np.int32)
@@ -132,35 +132,31 @@ for step_classes in [2,5,10,20,50]:
                 # 根据label_batch 中的label 确定样本
                 soft_label_old_classes = []
                 pred_old_classes = []
+                xu_cl = tf.where(label_batch == 1)# 获取 [索引 类别] 128*100
+                # xu_old_cl = xu_cl[np.where(xu_cl[:,1] in order[0:itera*nb_cl])]
                 for j in range(itera):#不同的分支包含的类别是不同的。也就是每个分支对不同类别的可信度是不同的
                     #scores_stored 维度： itera*batch_size*100
                     #scores        维度： itera*batch_size*100  仅仅最后一个分支有用
                     #label_batch   维度： batch_size *100
                     branch_cl = order[0:(j+1)*nb_cl]
-                    xu_old_cl=[] #当前分支处理的样本的序号
-                    for i in range(label_batch.shape[0].value):
-                        for j in branch_cl:
-                            if label_batch[i,j] == 1 :   #....
-                                xu_old_cl.extend(i)
-                    xu_old_cl = np.array(xu_old_cl)
-                    if len(xu_old_cl)>0:#当前batch 有旧样本
-                        soft_label_old_classes.append(tf.nn.softmax(scores_stored[j][xu_old_cl]) /tf.cast(T,tf.float32))
-                        pred_old_classes.append(tf.nn.softmax(scores[itera][xu_old_cl])/tf.cast(T,tf.float32))
-
-                new_class = order[itera*nb_cl:(itera+1)*nb_cl]
-                xu_new_cl =[]
-                for i in range(label_batch.shape[0].value):
-                    for j in new_class:
-                        if label_batch[i, j] >0:  # ....
-                            xu_new_cl.extend(i)
-                xu_new_cl = tf.cast(xu_new_cl,tf.int32)
-                label_new_classes = tf.stack(label_batch[xu_new_cl],axis=1)
-                pred_new_classes = tf.stack(tf.nn.softmax(scores[itera][xu_new_cl]),axis=1)
-                '''
-                那戴斯噶
-                '''
+                    xu_cl_old = []
+                    for cl in range(nb_cl):
+                        xu_cl_old.append(xu_cl[np.where(xu_cl[:,1] == branch_cl[cl])])#当前分支类别包含的样本的序号
+                        if len(xu_cl_old)>0:#当前batch 有旧样本
+                            old_label_branch = tf.gather(scores_stored[j],xu_cl_old[:,0])#获取当前branch的输出scores
+                            old_scores_branch = tf.gather(scores,xu_cl_old[:,0])#获取当前样本的输出预测输出值
+                            soft_label_old_classes.append(tf.nn.softmax(old_label_branch)/tf.cast(T,tf.float32))
+                            pred_old_classes.append(tf.nn.softmax(old_scores_branch)/tf.cast(T,tf.float32))
                 soft_label_old_classes = tf.stack(soft_label_old_classes,axis=1)
                 pred_old_classes = tf.stack(pred_old_classes,axis=1)
+
+                #计算新分支的loss
+                new_class = order[itera*nb_cl:(itera+1)*nb_cl]
+                xu_new_cl =[]
+                #两种情况 #1.仅仅计算新分支对新类别样本的loss #2 计算新旧类别样本的loss
+                #使用 #1
+                label_new_classes = tf.stack(label_batch,axis=1)
+                pred_new_classes = tf.stack(tf.nn.softmax(scores),axis=1)
 
                 l2_reg = wght_decay * tf.reduce_sum(
                     tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope='ResNet34'))
